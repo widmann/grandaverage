@@ -16,6 +16,8 @@
 %
 % Optional inputs:
 %   'pathname'    - char array path name {default '.'}
+%   'eventtype'   - new event type {default: first time locking event of
+%                   each dataset}
 %
 % Outputs:
 %   EEG           - EEGLAB EEG structure
@@ -43,7 +45,7 @@
 
 % $Id$
 
-function [EEG, com] = eeg_grandaverage(ALLEEG, varargin)
+function [EEG, com] = pop_grandaverage(ALLEEG, varargin)
 
 EEG = [];
 com = '';
@@ -65,11 +67,11 @@ else
     % Pop up dataset selection ui
     if ~isfield(args, 'datasets')
         drawnow;
-        uigeom = {[1] [1]};
+        uigeom = {1 1};
         uilist = {{'style' 'text' 'string' 'Select datasets:'} ...
                   {'style' 'listbox' 'string' {ALLEEG(:).setname} 'max' length(ALLEEG)}};
         result = inputgui(uigeom, uilist, 'pophelp(''pop_grandaverage'')', 'Grand average loaded datasets -- pop_grandaverage()', [], 'normal', [1 length(ALLEEG)]);
-        if length( result ) == 0, return, end
+        if isempty(result), return, end
 
         args.datasets = result{1};
     end
@@ -88,51 +90,72 @@ if isfield(args, 'filenames')
     end
 end
 
-% Grand average
+% Grand average data
 for dataset = 1:length(ALLEEG)
     EEG.data = cat(3, EEG.data, mean(ALLEEG(dataset).data, 3));
-    % Get type from first time locking event
-    EEG.event(dataset).type = ALLEEG(dataset).event(find([ALLEEG(dataset).event.latency] == round((0 - ALLEEG(dataset).xmin) * ALLEEG(dataset).srate + 1))).type;
+
+    % Get event type from first time locking event
+    if isfield(args, 'eventtype')
+        EEG.event(dataset).type = args.eventtype;
+    elseif isfield(ALLEEG(dataset).event, 'type') && isfield(ALLEEG(dataset).event, 'latency')
+        tleLatency = (0 - ALLEEG(dataset).xmin) * ALLEEG(dataset).srate + 1;
+        [foo, tleIndex] = min([ALLEEG(dataset).event.latency] - tleLatency);
+        EEG.event(dataset).type = ALLEEG(dataset).event(tleIndex).type;
+    else
+        EEG.event(dataset).type = 'TLE'; % default
+    end
 end
 
 % pnts, nbchan, srate, xmin, xmax
-for fieldname = {'pnts' 'nbchan' 'srate' 'xmin' 'xmax'}
-    EEG.(fieldname{:}) = unique([ALLEEG.(fieldname{:})]);
-    if length(EEG.(fieldname{:})) ~= 1
-        error(['Field EEG.' fieldname{:} ' not consistent across datasets.']);
+for iField = {'pnts' 'nbchan' 'srate' 'xmin' 'xmax'}
+    EEG.(iField{:}) = unique([ALLEEG.(iField{:})]);
+    if length(EEG.(iField{:})) ~= 1
+        error(['Field EEG.' iField{:} ' not uniform.']);
     end
 end
 
-% ref
-EEG.ref = unique({ALLEEG.ref});
-if length(EEG.ref) == 1
-    EEG.ref = EEG.ref{:};
-else
-    error(['Field EEG.ref not consistent across datasets.']);
+% Reference
+try
+    EEG.ref = unique(cat(1, ALLEEG.ref), 'rows');
+    if size(EEG.ref, 1) > 1
+        error('Field EEG.ref not uniform.');
+    end
+catch
+    error('Field EEG.ref not uniform.');
 end
 
-% trials
+% Trials
 EEG.trials = size(EEG.data, 3);
 
-% chanlocs
-chanlocs = cat(1, ALLEEG.chanlocs); 
-for chan = 1:EEG.nbchan
-    EEG.chanlocs(chan).labels = unique({chanlocs(:, chan).labels});
-    if length(EEG.chanlocs(chan).labels) == 1
-        EEG.chanlocs(chan).labels = EEG.chanlocs(chan).labels{:};
-    else
-        error('Structure EEG.chanlocs.labels not consistent across datasets.');
+% Channel labels and locations
+Chanlocs = cat(1, ALLEEG.chanlocs);
+fieldArray = fieldnames(Chanlocs);
+
+for iField = 1:length(fieldArray)
+    for iChan = 1:EEG.nbchan
+
+        EEG.chanlocs(iChan).(fieldArray{iField}) = unique(cat(1, Chanlocs(:, iChan).(fieldArray{iField})), 'rows');
+
+        if size(EEG.chanlocs(iChan).(fieldArray{iField}), 1) > 1 && strcmpi(fieldArray{iField}, 'labels')
+            error('Structure EEG.chanlocs.labels not uniform.');
+        elseif size(EEG.chanlocs(iChan).(fieldArray{iField}), 1) > 1
+            warning(['Structure EEG.chanlocs not uniform. Grand-averaging of electrode locations not yet implemented. Skipping field ' fieldArray{iField} '.']);
+            EEG.chanlocs = rmfield(EEG.chanlocs, fieldArray{iField});
+            break
+        end
+
     end
 end
 
-% event
-tmp = num2cell(round((0 - EEG.xmin) * EEG.srate + 1) + [0:length(EEG.event) - 1] * EEG.pnts);
+% Events
+tmp = num2cell(round((0 - EEG.xmin) * EEG.srate + 1) + (0:length(EEG.event) - 1) * EEG.pnts);
 [EEG.event(:).latency] = deal(tmp{:});
-tmp = num2cell([1:length(EEG.event)]);
+tmp = num2cell(1:length(EEG.event));
 [EEG.event(:).epoch] = deal(tmp{:});
 [EEG.event(:).trials] = deal(ALLEEG.trials);
 [EEG.event(:).setname] = deal(ALLEEG.setname);
 
+% Check dataset
 EEG = eeg_checkset(EEG, 'eventconsistency');
 
 % History string
