@@ -23,6 +23,15 @@
 %   EEG           - EEGLAB EEG structure
 %   com           - history string
 %
+% Note:
+%   Use with separate datasets for each subject and event type. All trials
+%   are averaged per dataset and the averages are collected in the third
+%   (trial) dimension of the output dataset. The event type of each average
+%   is defined by the first time locking event. In file mode all datasets
+%   should reside in a single directory. Electrode locations are NOT
+%   averaged. Electrode locations are preserved if all datasets contain the
+%   same or only a single dataset contains electrode location information.
+%
 % Author: Andreas Widmann, University of Leipzig, 2005
 
 %123456789012345678901234567890123456789012345678901234567890123456789012
