@@ -33,7 +33,7 @@
 
 function vers = eegplugin_grandaverage(fig, trystrs, catchstrs)
 
-    vers = 'grandaverage1.00';
+    vers = 'grandaverage1.1';
     if nargin < 3
         error('eegplugin_grandaverage requires 3 arguments');
     end
